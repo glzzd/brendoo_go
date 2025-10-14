@@ -1,0 +1,159 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"os"
+	"time"
+)
+
+type Product struct {
+	ID              string      `json:"_id"`
+	Name            string      `json:"name"`
+	Brand           string      `json:"brand"`
+	Price           float64     `json:"price"`
+	Currency        string      `json:"currency"`
+	PriceInRubles   *float64    `json:"priceInRubles"`
+	DiscountedPrice *float64    `json:"discountedPrice"`
+	Description     string      `json:"description"`
+	Images          []string    `json:"images"`
+	Sizes           []Size      `json:"sizes"`
+	Colors          []Color     `json:"colors"`
+	ProductURL      string      `json:"productUrl"`
+	Store           string      `json:"store"`
+	Category        string      `json:"category"`
+	ProcessedAt     string      `json:"processedAt"`
+	IsActive        bool        `json:"isActive"`
+	StockStatus     string      `json:"stockStatus"`
+	Stock           Stock       `json:"stock"`
+}
+
+type Size struct {
+	SizeName string `json:"sizeName"`
+	OnStock  bool   `json:"onStock"`
+}
+
+type Color struct {
+	Name string `json:"name"`
+	Hex  string `json:"hex"`
+}
+
+type Stock struct {
+	Quantity  int  `json:"quantity"`
+	IsInStock bool `json:"isInStock"`
+}
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	
+	brands := []string{"Zara", "H&M", "Nike", "Adidas", "Mango", "Bershka", "Pull&Bear", "Stradivarius", "Massimo Dutti", "COS"}
+	stores := []string{"zara", "hm", "nike", "adidas", "mango", "bershka", "pullbear", "stradivarius", "massimodutti", "cos"}
+	categories := []string{"woman-dresses", "man-shirts", "woman-tops", "man-pants", "woman-shoes", "man-shoes", "accessories", "bags", "jewelry", "sportswear"}
+	sizes := []string{"XS", "S", "M", "L", "XL", "XXL"}
+	colors := []Color{
+		{Name: "Siyah", Hex: "#000000"},
+		{Name: "Beyaz", Hex: "#FFFFFF"},
+		{Name: "Kırmızı", Hex: "#FF0000"},
+		{Name: "Mavi", Hex: "#0000FF"},
+		{Name: "Yeşil", Hex: "#00FF00"},
+		{Name: "Sarı", Hex: "#FFFF00"},
+		{Name: "Pembe", Hex: "#FFC0CB"},
+		{Name: "Gri", Hex: "#808080"},
+		{Name: "Kahverengi", Hex: "#A52A2A"},
+		{Name: "Mor", Hex: "#800080"},
+	}
+	stockStatuses := []string{"in_stock", "out_of_stock", "low_stock"}
+	
+	var products []Product
+	
+	for i := 1; i <= 1000; i++ {
+		brand := brands[rand.Intn(len(brands))]
+		store := stores[rand.Intn(len(stores))]
+		category := categories[rand.Intn(len(categories))]
+		
+		// Generate random price
+		price := float64(rand.Intn(500)+10) + rand.Float64()
+		priceInRubles := price * 15.5 // Approximate conversion rate
+		
+		// Random discount
+		var discountedPrice *float64
+		if rand.Float32() < 0.3 { // 30% chance of discount
+			discount := price * 0.8
+			discountedPrice = &discount
+		}
+		
+		// Generate sizes
+		var productSizes []Size
+		numSizes := rand.Intn(4) + 1 // 1-4 sizes
+		for j := 0; j < numSizes; j++ {
+			productSizes = append(productSizes, Size{
+				SizeName: sizes[rand.Intn(len(sizes))],
+				OnStock:  rand.Float32() < 0.7, // 70% chance in stock
+			})
+		}
+		
+		// Generate colors
+		var productColors []Color
+		numColors := rand.Intn(3) + 1 // 1-3 colors
+		for j := 0; j < numColors; j++ {
+			productColors = append(productColors, colors[rand.Intn(len(colors))])
+		}
+		
+		// Generate images
+		var images []string
+		numImages := rand.Intn(5) + 1 // 1-5 images
+		for j := 0; j < numImages; j++ {
+			images = append(images, fmt.Sprintf("https://example.com/images/product_%d_image_%d.jpg", i, j+1))
+		}
+		
+		stockStatus := stockStatuses[rand.Intn(len(stockStatuses))]
+		quantity := rand.Intn(100)
+		if stockStatus == "out_of_stock" {
+			quantity = 0
+		}
+		
+		product := Product{
+			ID:              fmt.Sprintf("product_%d_%d", i, time.Now().Unix()),
+			Name:            fmt.Sprintf("%s Ürün %d - Premium Kalite", brand, i),
+			Brand:           brand,
+			Price:           price,
+			Currency:        "TRY",
+			PriceInRubles:   &priceInRubles,
+			DiscountedPrice: discountedPrice,
+			Description:     fmt.Sprintf("Bu %s markasının premium kalitesinde %d numaralı ürünüdür. Yüksek kalite malzemelerden üretilmiştir.", brand, i),
+			Images:          images,
+			Sizes:           productSizes,
+			Colors:          productColors,
+			ProductURL:      fmt.Sprintf("https://%s.com/product-%d", store, i),
+			Store:           store,
+			Category:        category,
+			ProcessedAt:     time.Now().Format("15:04:05"),
+			IsActive:        rand.Float32() < 0.95, // 95% active
+			StockStatus:     stockStatus,
+			Stock: Stock{
+				Quantity:  quantity,
+				IsInStock: quantity > 0,
+			},
+		}
+		
+		products = append(products, product)
+	}
+	
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(products, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling JSON: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Write to file
+	err = os.WriteFile("test_products_1000.json", jsonData, 0644)
+	if err != nil {
+		fmt.Printf("Error writing file: %v\n", err)
+		os.Exit(1)
+	}
+	
+	fmt.Printf("✅ Successfully generated 1000 test products in test_products_1000.json\n")
+	fmt.Printf("📊 File size: %.2f MB\n", float64(len(jsonData))/1024/1024)
+}
