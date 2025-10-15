@@ -25,6 +25,13 @@ func NewProductHandler(db *gorm.DB) *ProductHandler {
 	}
 }
 
+// checkIDExistsInDB checks if an ID already exists in the database
+func (h *ProductHandler) checkIDExistsInDB(id string) bool {
+	var count int64
+	h.DB.Model(&models.Product{}).Where("id = ?", id).Count(&count)
+	return count > 0
+}
+
 // BulkCreateProducts handles bulk insertion of products (optimized for millions of records)
 // Accepts both single product object and array of products
 func (h *ProductHandler) BulkCreateProducts(c *gin.Context) {
@@ -99,6 +106,18 @@ func (h *ProductHandler) BulkCreateProducts(c *gin.Context) {
 		log.Printf("[DEBUG] BulkCreateProducts: Product %d - ID: %s, Name: %s, ProductURL: %s",
 			i, products[i].ID, products[i].Name, products[i].ProductURL)
 
+		// Check if ProductURL already exists in database
+		if products[i].ProductURL != "" {
+			var existingProduct models.Product
+			result := h.DB.Where("product_url = ?", products[i].ProductURL).First(&existingProduct)
+			if result.Error == nil {
+				log.Printf("[WARN] BulkCreateProducts: ProductURL already exists in database: %s, skipping product: %s", 
+					products[i].ProductURL, products[i].Name)
+				duplicateCount++
+				continue // Skip this product as ProductURL already exists
+			}
+		}
+
 		// Check for duplicate name+productUrl combination within the batch
 		nameUrlKey := fmt.Sprintf("%s|%s", products[i].Name, products[i].ProductURL)
 		if products[i].Name != "" && products[i].ProductURL != "" {
@@ -114,28 +133,55 @@ func (h *ProductHandler) BulkCreateProducts(c *gin.Context) {
 		// Generate unique ID if empty
 		if products[i].ID == "" {
 			if products[i].Name != "" {
-				baseID := strings.ToLower(strings.ReplaceAll(products[i].Name, " ", "-"))
+				// Clean Turkish characters and create base ID
+				baseID := strings.ToLower(products[i].Name)
+				// Replace Turkish characters
+				baseID = strings.ReplaceAll(baseID, "ç", "c")
+				baseID = strings.ReplaceAll(baseID, "ğ", "g")
+				baseID = strings.ReplaceAll(baseID, "ı", "i")
+				baseID = strings.ReplaceAll(baseID, "ö", "o")
+				baseID = strings.ReplaceAll(baseID, "ş", "s")
+				baseID = strings.ReplaceAll(baseID, "ü", "u")
+				// Replace spaces and special characters
+				baseID = strings.ReplaceAll(baseID, " ", "-")
 				baseID = strings.ReplaceAll(baseID, ".", "")
 				baseID = strings.ReplaceAll(baseID, ",", "")
+				baseID = strings.ReplaceAll(baseID, "(", "")
+				baseID = strings.ReplaceAll(baseID, ")", "")
+				baseID = strings.ReplaceAll(baseID, "/", "-")
+				baseID = strings.ReplaceAll(baseID, "\\", "-")
+				
 				counter := 1
 				newID := baseID
-				for seenIDs[newID] {
+				
+				// Check both in-memory and database for uniqueness
+				for seenIDs[newID] || h.checkIDExistsInDB(newID) {
 					newID = fmt.Sprintf("%s-%d", baseID, counter)
 					counter++
 				}
 				products[i].ID = newID
 				seenIDs[newID] = true
 			} else {
-				products[i].ID = fmt.Sprintf("product-%d-%d", time.Now().Unix(), i)
+				// Generate timestamp-based ID and ensure uniqueness
+				baseID := fmt.Sprintf("product-%d-%d", time.Now().Unix(), i)
+				counter := 1
+				newID := baseID
+				
+				for seenIDs[newID] || h.checkIDExistsInDB(newID) {
+					newID = fmt.Sprintf("%s-%d", baseID, counter)
+					counter++
+				}
+				products[i].ID = newID
 				seenIDs[products[i].ID] = true
 			}
 		} else {
-			if seenIDs[products[i].ID] {
-				log.Printf("[WARN] BulkCreateProducts: Duplicate ID found in batch: %s, generating new ID", products[i].ID)
+			// Check if provided ID already exists in batch or database
+			if seenIDs[products[i].ID] || h.checkIDExistsInDB(products[i].ID) {
+				log.Printf("[WARN] BulkCreateProducts: Duplicate ID found (batch or DB): %s, generating new ID", products[i].ID)
 				counter := 1
 				baseID := products[i].ID
 				newID := fmt.Sprintf("%s-%d", baseID, counter)
-				for seenIDs[newID] {
+				for seenIDs[newID] || h.checkIDExistsInDB(newID) {
 					counter++
 					newID = fmt.Sprintf("%s-%d", baseID, counter)
 				}
